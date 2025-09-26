@@ -69,6 +69,10 @@ func RequestFromReader(r io.Reader) (*Request, error) {
 			copy(nb, buf[:readToIndex])
 			buf = nb
 		}
+		// if end of file flag is false
+		// read into the buffer from the prev readToIndex
+		// check if EOF
+		// and if not increase readToIndex by the bytes read into the buffer
 		if !hitEOF {
 			n, err := r.Read(buf[readToIndex:])
 			if errors.Is(err, io.EOF) {
