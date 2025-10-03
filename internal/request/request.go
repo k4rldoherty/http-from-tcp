@@ -7,6 +7,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"github.com/k4rldoherty/tcp-from-http/internal/headers"
 )
 
 const BUFFERSIZE = 8
@@ -15,11 +17,13 @@ type ParserState int
 
 const (
 	Initialized ParserState = iota
+	ParsingHeaders
 	Done
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     headers.Headers
 	State       ParserState
 }
 
@@ -30,6 +34,21 @@ type RequestLine struct {
 }
 
 func (r *Request) Parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.State != Done {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		totalBytesParsed += n
+		if n == 0 {
+			break
+		}
+	}
+	return totalBytesParsed, nil
+}
+
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.State {
 	case Initialized:
 		bytes, rl, err := parseRequestLine(string(data))
@@ -40,8 +59,17 @@ func (r *Request) Parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *rl
-		r.State = Done
+		r.State = ParsingHeaders
 		return bytes, nil
+	case ParsingHeaders:
+		n, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if done {
+			r.State = Done
+		}
+		return n, nil
 	case Done:
 		return 0, errors.New("parse function called in Done state")
 	default:
@@ -58,7 +86,8 @@ func RequestFromReader(r io.Reader) (*Request, error) {
 	// initialize request with state
 	// as initialized
 	request := Request{
-		State: Initialized,
+		State:   Initialized,
+		Headers: headers.NewHeaders(),
 	}
 	hitEOF := false
 	for request.State != Done {
