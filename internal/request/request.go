@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/k4rldoherty/tcp-from-http/internal/headers"
@@ -18,12 +19,14 @@ type ParserState int
 const (
 	Initialized ParserState = iota
 	ParsingHeaders
+	ParsingBody
 	Done
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	State       ParserState
 }
 
@@ -33,10 +36,10 @@ type RequestLine struct {
 	HTTPVersion string
 }
 
-func (r *Request) Parse(data []byte) (int, error) {
+func (r *Request) Parse(data []byte, hitEOF bool) (int, error) {
 	totalBytesParsed := 0
 	for r.State != Done {
-		n, err := r.parseSingle(data[totalBytesParsed:])
+		n, err := r.parseSingle(data[totalBytesParsed:], hitEOF)
 		if err != nil {
 			return 0, err
 		}
@@ -48,7 +51,7 @@ func (r *Request) Parse(data []byte) (int, error) {
 	return totalBytesParsed, nil
 }
 
-func (r *Request) parseSingle(data []byte) (int, error) {
+func (r *Request) parseSingle(data []byte, hitEOF bool) (int, error) {
 	switch r.State {
 	case Initialized:
 		bytes, rl, err := parseRequestLine(string(data))
@@ -67,9 +70,31 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.State = Done
+			r.State = ParsingBody
 		}
 		return n, nil
+	case ParsingBody:
+		cl := r.Headers.Get("content-length")
+		if cl == "" {
+			r.State = Done
+			return 0, nil
+		}
+		i, err := strconv.Atoi(cl)
+		if err != nil {
+			return 0, err
+		}
+		r.Body = append(r.Body, data...)
+		bodyLen := len(r.Body)
+		if bodyLen == i {
+			r.State = Done
+		} else if bodyLen > i {
+			return 0, errors.New("body longer than content length")
+		} else {
+			if hitEOF {
+				return 0, errors.New("body shorter than content length")
+			}
+		}
+		return len(data), nil
 	case Done:
 		return 0, errors.New("parse function called in Done state")
 	default:
@@ -88,6 +113,7 @@ func RequestFromReader(r io.Reader) (*Request, error) {
 	request := Request{
 		State:   Initialized,
 		Headers: headers.NewHeaders(),
+		Body:    []byte{},
 	}
 	hitEOF := false
 	for request.State != Done {
@@ -114,7 +140,7 @@ func RequestFromReader(r io.Reader) (*Request, error) {
 		}
 		// read from r into buffer starting at readToIndex
 		// parse read in bytes
-		consumed, err := request.Parse(buf[:readToIndex])
+		consumed, err := request.Parse(buf[:readToIndex], hitEOF)
 		if err != nil {
 			return nil, err
 		}

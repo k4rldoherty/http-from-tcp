@@ -37,6 +37,8 @@ func main() {
 		for k, v := range r.Headers {
 			fmt.Printf("- %s: %s\n", k, v)
 		}
+		fmt.Println("Body:")
+		fmt.Println(string(r.Body))
 		fmt.Printf("Connection closed from %v\n", conn.RemoteAddr())
 	}
 }
