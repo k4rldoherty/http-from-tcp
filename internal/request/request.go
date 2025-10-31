@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/k4rldoherty/tcp-from-http/internal/headers"
+	"github.com/k4rldoherty/http-from-tcp/internal/headers"
 )
 
 const BUFFERSIZE = 8

@@ -20,11 +20,19 @@ func (h Headers) Set(key, value string) {
 	h[key] = value
 }
 
+func (h Headers) Add(key, value string) {
+	h[key] = value
+}
+
 func (h Headers) Get(key string) string {
 	if v, ok := h[key]; ok {
 		return v
 	}
 	return ""
+}
+
+func (h Headers) Delete(key string) {
+	delete(h, key)
 }
 
 func (h Headers) Parse(d []byte) (n int, done bool, err error) {

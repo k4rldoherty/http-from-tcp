@@ -1,4 +1,4 @@
-module github.com/k4rldoherty/tcp-from-http
+module github.com/k4rldoherty/http-from-tcp
 
 go 1.25.1
 

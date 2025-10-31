@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/k4rldoherty/tcp-from-http/internal/request"
+	"github.com/k4rldoherty/http-from-tcp/internal/request"
 )
 
 const ADDRESS = "127.0.0.1:42069"
@@ -15,7 +15,12 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	defer l.Close()
+	defer func() {
+		err := l.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}()
 	fmt.Printf("Listening on address: %v\n", ADDRESS)
 	for {
 		conn, err := l.Accept()
