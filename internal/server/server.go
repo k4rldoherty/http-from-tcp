@@ -27,6 +27,7 @@ type HandlerError struct {
 type Handler func(rw *response.Writer, r *request.Request)
 
 func WriteError(w *response.Writer, err *HandlerError, body string) {
+	w = response.NewWriter(w.Destination, w.Headers)
 	if e := w.WriteStatusLine(response.StatusCode(err.Code)); e != nil {
 		log.Printf("error writing status line: %v\n", e)
 		return

@@ -55,6 +55,13 @@ func handler(w *response.Writer, r *request.Request) {
 		return
 	}
 
+	if strings.HasPrefix(url, "/video") {
+		log.Println("handling /video call")
+		handlers.HandleVideo(w, r)
+		log.Println("handled /video call")
+		return
+	}
+
 	log.Println("handling other call")
 	handlers.HandleOther(w, r)
 }

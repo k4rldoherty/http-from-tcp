@@ -101,12 +101,15 @@ func (w *Writer) WriteChunkedBody(b []byte) error {
 	if w.State != WritingBody {
 		return fmt.Errorf("invalid state")
 	}
+	// Write the length of the chunk
 	if _, err := fmt.Fprintf(w, "%X\r\n", len(b)); err != nil {
 		return err
 	}
+	// Write the chunk, in raw bytes
 	if _, err := w.Write(b); err != nil {
 		return err
 	}
+	// Write the trailing newline
 	if _, err := w.Write([]byte("\r\n")); err != nil {
 		return err
 	}
@@ -115,7 +118,24 @@ func (w *Writer) WriteChunkedBody(b []byte) error {
 
 func (w *Writer) WriteChunkedBodyDone() error {
 	w.State = Done
-	_, err := w.Write([]byte("0\r\n\r\n"))
+	_, err := w.Write([]byte("0\r\n"))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (w *Writer) WriteTrailer(t headers.Headers) error {
+	if w.State != Done {
+		return fmt.Errorf("invalid state for writing trailers")
+	}
+	for k, v := range t {
+		_, err := fmt.Fprintf(w, "%v: %v\r\n", k, v)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.Write([]byte("\r\n"))
 	if err != nil {
 		return err
 	}

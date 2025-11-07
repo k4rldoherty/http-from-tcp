@@ -2,12 +2,15 @@
 package handlers
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
+	"github.com/k4rldoherty/http-from-tcp/internal/headers"
 	"github.com/k4rldoherty/http-from-tcp/internal/request"
 	"github.com/k4rldoherty/http-from-tcp/internal/response"
 	"github.com/k4rldoherty/http-from-tcp/internal/server"
@@ -73,33 +76,25 @@ func HandleHTTPBin(w *response.Writer, r *request.Request) {
 	// Url and intitial get
 	targetParts := strings.Split(r.RequestLine.Target, "/")
 	numChunks := targetParts[len(targetParts)-1]
-	url := fmt.Sprintf("https://httpbin.org/stream/%s", numChunks)
+	url := fmt.Sprintf("https://httpbin.org/%s", numChunks)
 	res, err := http.Get(url)
 	defer func() {
 		err := res.Body.Close()
 		if err != nil {
-			server.WriteError(w, &server.HandlerError{
-				Code:    500,
-				Message: "Internal Server Error",
-			}, err.Error())
+			log.Printf("error closing response body: %v", err)
 			return
 		}
 	}()
 	if err != nil {
-		server.WriteError(w, &server.HandlerError{
-			Code:    500,
-			Message: "Internal Server Error",
-		}, "Error getting response from httpbin")
+		log.Printf("error getting response from httpbin: %v", err)
 		return
 	}
 
 	// Status line
 	err = w.WriteStatusLine(response.OK)
 	if err != nil {
-		server.WriteError(w, &server.HandlerError{
-			Code:    500,
-			Message: "Internal Server Error",
-		}, "Error writing status line")
+		log.Printf("error writing status line: %v", err)
+		return
 	}
 
 	// Headers
@@ -108,39 +103,70 @@ func HandleHTTPBin(w *response.Writer, r *request.Request) {
 	hdrs.Delete("Content-Type")
 	hdrs.Add("Transfer-Encoding", "chunked")
 	hdrs.Add("Content-Type", res.Header.Get("Content-Type"))
+	hdrs.Add("Trailer", "X-Content-SHA256, X-Content-Length")
 	err = w.WriteHeaders(hdrs)
 	if err != nil {
-		server.WriteError(w, &server.HandlerError{
-			Code:    500,
-			Message: "Internal Server Error",
-		}, "Error writing headers")
+		log.Printf("error writing headers: %v", err)
+		return
 	}
 
+	rawBytes := 0
+	bufForHash := []byte{}
 	// Preparing and sending response
 	buf := make([]byte, 1024)
 	for {
 		n, err := res.Body.Read(buf)
+		bufForHash = append(bufForHash, buf[:n]...)
+		rawBytes += n
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			server.WriteError(w, &server.HandlerError{
-				Code:    500,
-				Message: "Internal Server Error",
-			}, err.Error())
 			return
 		}
 		if n > 0 {
 			err = w.WriteChunkedBody(buf[:n])
 			if err != nil {
-				server.WriteError(w, &server.HandlerError{
-					Code:    500,
-					Message: "Internal Server Error",
-				}, err.Error())
+				log.Printf("error writing chunked body: %v", err)
 				return
 			}
 		}
 		clear(buf)
 	}
 	_ = w.WriteChunkedBodyDone()
+	trlrs := headers.Headers{}
+	trlrs.Set("X-Content-Length", fmt.Sprintf("%v", rawBytes))
+	hash := sha256.Sum256(bufForHash)
+	trlrs.Set("X-Content-SHA256", fmt.Sprintf("%x", hash[:]))
+	err = w.WriteTrailer(trlrs)
+	if err != nil {
+		log.Printf("error writing trailers: %v", err)
+		return
+	}
+}
+
+func HandleVideo(w *response.Writer, r *request.Request) {
+	vid, err := os.ReadFile("assets/vim.mp4")
+	if err != nil {
+		log.Printf("error reading video file: %v", err)
+		return
+	}
+	if err := w.WriteStatusLine(response.OK); err != nil {
+		log.Printf("ERROR: handle/WriteStatusLine: %v", err)
+		return
+	}
+
+	// create headers
+	hdrs := response.GetDefaultHeaders(len(successBody))
+	hdrs.Set("Content-Type", "video/mp4")
+
+	if err := w.WriteHeaders(hdrs); err != nil {
+		log.Printf("handle/WriteHeaders: %v", err)
+		return
+	}
+
+	_, err = w.WriteBody(vid)
+	if err != nil {
+		log.Printf("Handle: %v", err)
+	}
 }
